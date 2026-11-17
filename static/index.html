@@ -146,11 +146,13 @@
       <div class="card no-print">
         <div class="card-h"><h2>Site Test Et</h2><span class="sub">Alan adını yazın; otomatik çözümlenir, DNS → TCP → TLS → ilk bayt süreleri ölçülür</span></div>
         <form class="inline" onsubmit="event.preventDefault();quickSiteTest()">
-          <input class="input" id="qs-input" placeholder="ör. youtube.com veya https://www.turkiye.gov.tr" style="max-width:520px" autocomplete="off">
+          <input class="input" id="qs-input" placeholder="ör. youtube.com veya https://www.wikipedia.org" style="max-width:520px" autocomplete="off">
           <button class="btn primary" id="qs-btn" type="submit">Test et</button>
+          <button class="btn" id="qs-trace" type="button" onclick="quickTrace('qs-input','qs-trace-out')">Traceroute</button>
           <button class="btn ghost" type="button" onclick="addQuickToSites()" title="Periyodik test listesine ekle">+ Listeye ekle</button>
         </form>
         <div id="qs-result" style="margin-top:14px"></div>
+        <div id="qs-trace-out" style="margin-top:14px"></div>
       </div>
       <div class="card">
         <div class="card-h"><h2>Site Performansı</h2><span class="sub" id="site-sub"></span>
@@ -189,6 +191,14 @@
   <!-- TRACEROUTE -->
   <section class="tab" id="tab-trace" data-title="Traceroute">
     <div class="stack">
+      <div class="card no-print">
+        <div class="card-h"><h2>Traceroute Çalıştır</h2><span class="sub">Alan adı veya IP girin; rota atlama atlama gösterilir. Siteler listesindeki siteler de periyodik olarak izlenir.</span></div>
+        <form class="inline" onsubmit="event.preventDefault();quickTrace('tr-input','tr-out')">
+          <input class="input" id="tr-input" placeholder="ör. youtube.com, wikipedia.org veya 8.8.8.8" style="max-width:520px" autocomplete="off">
+          <button class="btn primary" id="tr-input-btn" type="submit">Traceroute</button>
+        </form>
+        <div id="tr-out" style="margin-top:14px"></div>
+      </div>
       <div class="alert info hidden no-print" id="trace-note"></div>
       <div class="grid cols-2" id="trace-latest"></div>
       <div class="card">
@@ -275,9 +285,9 @@
       </div>
 
       <div class="card">
-        <div class="card-h"><h3>Ookla Sunucuları</h3><span class="sub">Seçilen her sunucuda ayrı hız testi yapılır (ör. Türksat Kablo sunucuları)</span></div>
+        <div class="card-h"><h3>Ookla Sunucuları</h3><span class="sub">Seçilen her sunucuda ayrı hız testi yapılır (ör. kendi operatörünüzün sunucuları)</span></div>
         <div class="inline" style="flex-wrap:wrap">
-          <input class="input" id="ook-q" value="Türksat" style="max-width:280px" onkeydown="if(event.key==='Enter'){event.preventDefault();ooklaSearch()}">
+          <input class="input" id="ook-q" value="" placeholder="Operatör adı, şehir veya sunucu ID" style="max-width:280px" onkeydown="if(event.key==='Enter'){event.preventDefault();ooklaSearch()}">
           <button class="btn" onclick="ooklaSearch()">Sunucu ara</button>
           <span class="muted" style="font-size:12px">Şehir, operatör veya sunucu ID ile arayın</span>
         </div>
@@ -293,7 +303,7 @@
           <div class="sw-row" style="border:0;padding:0"><div><b>DNS sunucularını karşılaştır</b><span>Sistem / ISS / Google / Cloudflare</span></div><label class="switch"><input type="checkbox" id="site_resolvers"><span></span></label></div>
         </div>
         <div class="table-wrap" style="max-height:none"><table class="targets">
-          <thead><tr><th>Ad</th><th>Alan adı / URL</th><th>Çözümleme</th><th>Aktif</th><th></th></tr></thead>
+          <thead><tr><th>Ad</th><th>Alan adı / URL</th><th>Çözümleme</th><th>Aktif</th><th>Traceroute</th><th></th></tr></thead>
           <tbody id="sites-body"></tbody>
         </table></div>
         <div style="margin-top:10px;display:flex;gap:8px"><button class="btn sm" onclick="addSite()">+ Site ekle</button><button class="btn sm ghost" onclick="resetSites()">Varsayılanlara dön</button></div>
@@ -347,6 +357,20 @@
           <div class="sw-row"><div><b>Zayıf Wi-Fi sinyali</b><span>RSSI eşiğin altına indiğinde</span></div><label class="switch"><input type="checkbox" id="alert_on_weak_wifi"><span></span></label></div>
           <div style="margin-top:12px"><button class="btn sm" onclick="testEmail()">Test e-postası gönder</button></div>
         </div>
+      </div>
+
+      <div class="card" id="data-card">
+        <div class="card-h"><h3>Veri Yönetimi</h3><span class="sub" id="data-size"></span></div>
+        <div class="lbl-sm" style="margin-bottom:8px">Silinecek veri türleri</div>
+        <div id="data-tables" class="chips-wrap" style="margin-bottom:14px"></div>
+        <div class="inline" style="flex-wrap:wrap;gap:10px">
+          <input class="input" type="number" min="1" id="clear-days" value="30" style="width:90px">
+          <button class="btn" onclick="clearData(false)">Bu günden eski verileri sil</button>
+          <span class="dim">veya</span>
+          <button class="btn danger" onclick="clearData(true)">Tüm geçmişi temizle</button>
+        </div>
+        <div class="hint muted" style="font-size:12px;margin-top:10px">Silmeden önce veritabanının yedeği otomatik alınır (uygulama klasöründe <code>backups/</code>, son 5 yedek). Ayarlar ve hedefler etkilenmez.</div>
+        <div id="clear-result" style="margin-top:10px"></div>
       </div>
 
       <div class="card" id="update-card">

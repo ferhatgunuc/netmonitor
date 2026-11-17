@@ -30,7 +30,7 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-PRESERVE = {"config.json", ".venv", ".backup", "dist", ".git", "__pycache__"}
+PRESERVE = {"config.json", ".venv", ".backup", "backups", "dist", ".git", "__pycache__"}
 PRESERVE_PREFIX = ("network_monitor.db",)
 MAX_SIZE = 60 * 1024 * 1024
 

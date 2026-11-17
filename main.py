@@ -39,7 +39,7 @@ import storage as db
 import updater
 import webprobe as wp
 
-VERSION = "3.0.2"
+VERSION = "3.1.0"
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 DATA_DIR = Path(os.environ.get("NETMON_DATA_DIR", BASE_DIR))
@@ -53,16 +53,16 @@ DEFAULT_TARGETS = [
     {"id": "cloudflare", "name": "Cloudflare DNS", "host": "1.1.1.1", "ping": True, "trace": True},
     {"id": "riot_tr", "name": "Riot Games (TR/İstanbul)", "host": "104.160.143.212", "ping": True, "trace": True},
     {"id": "valve_eu", "name": "Valve CS2 (Viyana)", "host": "146.66.155.1", "ping": True, "trace": False},
-    {"id": "turktelekom", "name": "Türk Telekom DNS", "host": "195.175.39.39", "ping": True, "trace": False},
+    {"id": "quad9", "name": "Quad9 DNS", "host": "9.9.9.9", "ping": True, "trace": False},
 ]
 
 DEFAULT_SITES = [
-    {"id": "google", "name": "Google", "target": "www.google.com", "enabled": True},
-    {"id": "youtube", "name": "YouTube", "target": "www.youtube.com", "enabled": True},
-    {"id": "instagram", "name": "Instagram", "target": "www.instagram.com", "enabled": True},
-    {"id": "facebook", "name": "Facebook", "target": "www.facebook.com", "enabled": True},
-    {"id": "edevlet", "name": "e-Devlet", "target": "www.turkiye.gov.tr", "enabled": True},
-    {"id": "netflix", "name": "Netflix", "target": "www.netflix.com", "enabled": False},
+    {"id": "google", "name": "Google", "target": "www.google.com", "enabled": True, "trace": True},
+    {"id": "youtube", "name": "YouTube", "target": "www.youtube.com", "enabled": True, "trace": True},
+    {"id": "instagram", "name": "Instagram", "target": "www.instagram.com", "enabled": True, "trace": True},
+    {"id": "facebook", "name": "Facebook", "target": "www.facebook.com", "enabled": True, "trace": True},
+    {"id": "wikipedia", "name": "Wikipedia", "target": "www.wikipedia.org", "enabled": True, "trace": True},
+    {"id": "netflix", "name": "Netflix", "target": "www.netflix.com", "enabled": False, "trace": True},
 ]
 
 DEFAULT_CONFIG: Dict[str, Any] = {
@@ -201,7 +201,8 @@ def validate_sites(sites: Any) -> List[Dict[str, Any]]:
         while sid in seen:
             sid, i = f"{base}_{i}", i + 1
         seen.add(sid)
-        out.append({"id": sid, "name": name, "target": raw, "enabled": bool(s.get("enabled", True))})
+        out.append({"id": sid, "name": name, "target": raw, "enabled": bool(s.get("enabled", True)),
+                    "trace": bool(s.get("trace", True))})
     return out
 
 
@@ -493,30 +494,52 @@ def job_ping():
     return "; ".join(res["warnings"]) or None
 
 
+trace_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="trace")
+
+
+def trace_items() -> List[Dict[str, str]]:
+    """Traceroute yapılacak hedefler: Hedefler listesi + traceroute'u açık siteler."""
+    items = [{"id": t["id"], "name": t["name"], "host": t["host"]} for t in config["targets"] if t.get("trace")]
+    for s in config.get("sites", []):
+        if s.get("enabled") and s.get("trace", True):
+            try:
+                host, _ = wp.normalize_target(s["target"])
+            except ValueError:
+                continue
+            items.append({"id": f"site:{s['id']}", "name": s["name"], "host": host})
+    return items
+
+
+def trace_one(item: Dict[str, str], b: probes.Binding) -> Optional[Dict[str, Any]]:
+    host = item["host"] if item["host"] != "@gateway" else (b.gateway or netinfo.snapshot().get("default_gateway"))
+    if not host or probes.STOP.is_set():
+        return None
+    r = probes.run_traceroute(host, b, int(config["trace_max_hops"]))
+    if probes.STOP.is_set():
+        return None
+    db.insert("traceroutes", {
+        "timestamp": db.now_str(), "target_name": item["name"], "host": host, "target_id": item["id"],
+        "output": r["output"], "hops_json": json.dumps(r["hops"]), "iface_type": b.iface_type,
+        "iface_name": b.iface_name, "bound": int(r["bound"]),
+    })
+    return {**r, "host": host, "iface_type": b.iface_type, "iface_name": b.iface_name}
+
+
 def job_trace():
     res = resolve_bindings()
     bindings = res["bindings"]
     if ni.IS_WINDOWS:
         # tracert arayüz seçemez → sistemin varsayılan rotası ile tek tur
         bindings = resolve_bindings("auto")["bindings"]
-    targets = [t for t in config["targets"] if t.get("trace")]
-    if not bindings or not targets:
+    items = trace_items()
+    if not bindings or not items:
         return "; ".join(res["warnings"]) or "Traceroute hedefi seçilmedi"
-    for b in bindings:
-        for t in targets:
-            host = t["host"] if t["host"] != "@gateway" else (b.gateway or netinfo.snapshot().get("default_gateway"))
-            if not host:
-                continue
-            if probes.STOP.is_set():
-                return None
-            r = probes.run_traceroute(host, b, int(config["trace_max_hops"]))
-            if probes.STOP.is_set():
-                return None
-            db.insert("traceroutes", {
-                "timestamp": db.now_str(), "target_name": t["name"], "host": host, "target_id": t["id"],
-                "output": r["output"], "hops_json": json.dumps(r["hops"]), "iface_type": b.iface_type,
-                "iface_name": b.iface_name, "bound": int(r["bound"]),
-            })
+    futures = [trace_executor.submit(trace_one, it, b) for b in bindings for it in items]
+    for f in futures:
+        try:
+            f.result()
+        except Exception as e:
+            print(f"[trace] {e}")
     return "; ".join(res["warnings"]) or None
 
 
@@ -754,7 +777,7 @@ def get_servers():
 
 
 @app.get("/api/ookla/search")
-def ookla_search(q: str = "Türksat"):
+def ookla_search(q: str = ""):
     q = q.strip()[:60]
     if len(q) < 2:
         raise HTTPException(400, "En az 2 karakter girin")
@@ -966,9 +989,42 @@ def test_email():
     return {"status": "sent"}
 
 
-@app.post("/api/purge")
-def purge(days: int = Body(..., embed=True)):
-    return {"deleted": db.purge_older_than(max(1, days))}
+@app.post("/api/trace-now")
+def trace_now(target: str = Body(..., embed=True)):
+    """Girilen alan adı/IP için anında traceroute (sonuç kaydedilir ve Traceroute sekmesinde görünür)."""
+    try:
+        host, _ = wp.normalize_target(target)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    probes.STOP.clear()
+    bindings = resolve_bindings("auto" if ni.IS_WINDOWS else None)["bindings"] or [probes.Binding(None, "unknown")]
+    site = next((s for s in config.get("sites", []) if wp.normalize_target(s["target"])[0] == host), None)
+    item = {"id": f"site:{site['id']}" if site else f"site:{host}", "name": site["name"] if site else host, "host": host}
+    futures = [trace_executor.submit(trace_one, item, b) for b in bindings]
+    return {"results": [r for r in (f.result() for f in futures) if r]}
+
+
+@app.get("/api/data/info")
+def data_info():
+    return db.data_info()
+
+
+@app.post("/api/data/clear")
+def data_clear(payload: Dict[str, Any] = Body(...)):
+    """Geçmiş ölçümleri siler. Silmeden önce veritabanının yedeği alınır (backups/ klasörü, son 5 yedek)."""
+    tables = [t for t in payload.get("tables") or list(db.DATA_TABLES) if t in db.DATA_TABLES]
+    days = payload.get("older_than_days")
+    days = int(days) if days not in (None, "", 0, "0") else None
+    if not tables:
+        raise HTTPException(400, "Silinecek veri türü seçilmedi")
+    backup = db.backup(DATA_DIR / "backups")
+    deleted = db.clear(tables, days)
+    log_event("clear", "warn", f"Geçmiş veriler temizlendi ({'%d günden eski' % days if days else 'tümü'}; "
+              f"{sum(deleted.values())} kayıt). Yedek: {backup.name}")
+    if not days:
+        config["last_report"] = None
+        save_config()
+    return {"deleted": deleted, "backup": str(backup), "info": db.data_info()}
 
 
 EXPORT_HEADERS = {

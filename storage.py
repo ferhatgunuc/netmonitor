@@ -508,3 +508,48 @@ def data_bounds(win) -> Dict[str, Any]:
              SELECT MAX(timestamp) FROM site_checks WHERE timestamp BETWEEN ? AND ?)""",
         (cutoff, end) * 6).fetchone()
     return {"first": r[0], "last": r[1]}
+
+
+# ---------------------------------------------------------------------------
+# Veri yönetimi (temizleme / yedek)
+# ---------------------------------------------------------------------------
+
+DATA_TABLES = {
+    "pings": "Ping & jitter", "speedtests": "Hız testleri", "traceroutes": "Traceroute",
+    "site_checks": "Site testleri", "cdn_checks": "CDN önbellek", "wifi_samples": "Wi-Fi sinyal",
+    "link_events": "Bağlantı olayları",
+}
+
+
+def data_info() -> Dict[str, Any]:
+    c = conn()
+    tables = {}
+    for t, label in DATA_TABLES.items():
+        r = c.execute(f"SELECT COUNT(*), MIN(timestamp) FROM {t}").fetchone()
+        tables[t] = {"label": label, "rows": r[0], "first": r[1]}
+    size = sum(p.stat().st_size for p in DB_PATH.parent.glob(DB_PATH.name + "*") if p.is_file())
+    return {"tables": tables, "size_bytes": size, "path": str(DB_PATH)}
+
+
+def backup(folder: Path, keep: int = 5) -> Path:
+    folder.mkdir(parents=True, exist_ok=True)
+    dst = folder / f"network_monitor_{datetime.now():%Y%m%d_%H%M%S}.db"
+    with sqlite3.connect(str(dst)) as out:
+        conn().backup(out)
+    for old in sorted(folder.glob("network_monitor_*.db"))[:-keep]:
+        old.unlink(missing_ok=True)
+    return dst
+
+
+def clear(tables: List[str], older_than_days: Optional[int] = None) -> Dict[str, int]:
+    c = conn()
+    out = {}
+    cutoff = (datetime.now() - timedelta(days=older_than_days)).strftime(FMT) if older_than_days else None
+    for t in tables:
+        if t not in DATA_TABLES:
+            continue
+        cur = c.execute(f"DELETE FROM {t} WHERE timestamp < ?", (cutoff,)) if cutoff else c.execute(f"DELETE FROM {t}")
+        out[t] = cur.rowcount
+    c.commit()
+    c.execute("VACUUM")
+    return out

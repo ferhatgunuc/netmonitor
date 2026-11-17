@@ -19,7 +19,7 @@ from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SKIP_DIRS = {".venv", ".backup", "dist", ".git", "__pycache__"}
+SKIP_DIRS = {".venv", ".backup", "backups", "dist", ".git", "__pycache__", "docs"}
 SKIP_FILES = {"config.json", ".DS_Store"}
 
 

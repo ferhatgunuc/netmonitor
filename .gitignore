@@ -6,3 +6,4 @@ network_monitor.db*
 .backup/
 dist/
 .DS_Store
+backups/

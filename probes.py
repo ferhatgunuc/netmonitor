@@ -240,7 +240,7 @@ def ookla_available() -> bool:
 
 
 def ookla_search(query: str, limit: int = 100) -> List[Dict[str, Any]]:
-    """speedtest.net sunucu araması (ör. "Türksat", "Ankara"). Ookla CLI'nin --server-id ile kullanılır."""
+    """speedtest.net sunucu araması (operatör adı, şehir veya sunucu ID). Ookla CLI'nin --server-id ile kullanılır."""
     import urllib.parse
     import urllib.request
     url = ("https://www.speedtest.net/api/js/servers?engine=js&https_functional=true&limit=%d&search=%s"

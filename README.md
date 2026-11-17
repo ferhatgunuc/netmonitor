@@ -1,4 +1,8 @@
-# NetMonitor v3 — Ağ Kalitesi Sürekli İzleme
+# NetMonitor — Ağ Kalitesi Sürekli İzleme
+
+**Tanıtım ve kurulum sayfası:** https://ferhatgunuc.github.io/netmonitor/
+
+![NetMonitor genel bakış](docs/img/overview.jpg)
 
 Ping/jitter/paket kaybı, hız testi (Ookla + kotasız Cloudflare) ve traceroute ölçümlerini
 sürekli kaydeden; **Wi-Fi ve Ethernet bağlantılarını ayrı ayrı izleyip karşılaştırabilen**
@@ -48,18 +52,28 @@ Kurulu değilse hız testi otomatik olarak Cloudflare ile yapılır.
 - macOS: `brew tap teamookla/speedtest && brew install speedtest`
   (Homebrew'daki `speedtest-cli` farklı bir programdır, onu kurmayın.)
 
+## Ekran görüntüleri
+
+| Wi-Fi / Ethernet karşılaştırma | Site testleri | CDN önbellek | Oturum raporu |
+|---|---|---|---|
+| ![](docs/img/connection.jpg) | ![](docs/img/sites.jpg) | ![](docs/img/cdn.jpg) | ![](docs/img/report.jpg) |
+
+## v3.1 yenilikleri
+- **Siteler için traceroute:** Ayarlar → Siteler listesinde her sitenin yanında traceroute anahtarı var (varsayılan açık); periyodik traceroute bu siteleri de izler. Siteler ve Traceroute sekmelerinde girilen alan adı için anında traceroute çalıştırılabilir.
+- **Geçmiş verileri temizleme:** Ayarlar → Veri Yönetimi. Veri türü seçilerek belirli gün sayısından eski kayıtlar veya tüm geçmiş silinir. Silmeden önce veritabanının yedeği `backups/` klasörüne otomatik alınır (son 5 yedek); ayarlar ve hedefler etkilenmez.
+
 ## v3 yenilikleri
 
 ### Site testi (alan adı ile)
-**Siteler** sekmesinde alan adını (ör. `youtube.com` veya `https://www.turkiye.gov.tr`) yazıp **Test et**'e basın:
+**Siteler** sekmesinde alan adını (ör. `youtube.com` veya `https://www.wikipedia.org`) yazıp **Test et**'e basın:
 - Alan adı otomatik çözümlenir: **işletim sistemi**, **ISS DNS'i** (sistemde tanımlı sunucuya önbelleksiz sorgu),
   **Google 8.8.8.8** ve **Cloudflare 1.1.1.1** yan yana; süreler ve dönen IP'ler karşılaştırılır.
 - Bağlantı aşamaları ölçülür: DNS → TCP → TLS → ilk bayt (TTFB) → toplam; HTTP kodu, CDN (Cloudflare,
   Akamai, Fastly, Google, Meta…), IP'nin sahibi (ASN) ve ters DNS adı gösterilir.
 - **+ Listeye ekle** ile site periyodik test listesine eklenir (Ayarlar → Siteler).
 
-### Ookla sunucu seçimi (Türksat Kablo vb.)
-Ayarlar → **Ookla Sunucuları**: "Türksat", şehir adı veya sunucu ID ile arayın, istediğiniz sunucuları ekleyin.
+### Ookla sunucu seçimi
+Ayarlar → **Ookla Sunucuları**: operatör adı, şehir veya sunucu ID ile arayın, istediğiniz sunucuları ekleyin.
 Seçilen her sunucuda ayrı hız testi yapılır; rapor sunucu bazında özet verir. (Ookla CLI gerekir.)
 
 ### CDN / önbellek sunucuları (YouTube, Facebook, Instagram)
@@ -154,6 +168,7 @@ probes.py      ping, traceroute, hız testi (arayüze bağlama), Ookla sunucu ar
 webprobe.py    DNS çözümleme, site zamanlaması, ASN, CDN/önbellek keşfi
 updater.py     internetten güncelleme
 tools/         release.py — güncelleme paketi hazırlama
+docs/          tanıtım sayfası (GitHub Pages) ve ekran görüntüleri
 storage.py     SQLite şema, göç ve sorgular
 static/        arayüz (index.html, app.css, app.js, vendor/chart.umd.js)
 macos/         .app oluşturucu ve otomatik başlatma

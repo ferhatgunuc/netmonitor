@@ -579,6 +579,33 @@ function renderCompare() {
   el.innerHTML = html + '<div class="legend-inline" style="margin-top:10px"><span><b class="c-good">Yeşil</b> = o metrikte daha iyi olan bağlantı</span></div>';
 }
 
+function hopTable(t) {
+  const max = Math.max(1, ...t.hops.map((h) => h.avg || 0));
+  const last = [...t.hops].reverse().find((h) => h.ip);
+  return `${t.hops.length ? `<div class="table-wrap hops" style="max-height:340px"><table><thead><tr><th>#</th><th>IP</th><th class="r">Ort.</th><th class="r">En iyi</th><th class="r">Kayıp</th><th></th></tr></thead><tbody>
+      ${t.hops.map((h) => `<tr><td class="dim">${h.hop}</td><td class="mono">${h.ip ? esc(h.ip) : '<span class="dim">* * *</span>'}</td>
+        <td class="r">${h.avg !== null ? gv('ping', h.avg, fms) : '<span class="dim">—</span>'}</td><td class="r">${fms(h.best)}</td>
+        <td class="r">${h.loss ? `<span class="${h.loss >= 100 ? 'dim' : 'c-warn'}">%${h.loss}</span>` : '%0'}</td>
+        <td class="bar"><div class="hopbar"><i style="width:${((h.avg || 0) / max) * 100}%;background:${gcol(grade('ping', h.avg))}"></i></div></td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="muted" style="font-size:12px;margin-top:8px">${t.hops.length} atlama${last ? ` · son yanıt veren: <span class="mono">${esc(last.ip)}</span>` : ''}</div>` : '<div class="empty">Çıktı ayrıştırılamadı</div>'}
+      <details class="raw"><summary>Ham çıktı</summary><pre>${esc(t.output)}</pre></details>`;
+}
+
+async function quickTrace(inputId, outId) {
+  const target = $(inputId).value.trim();
+  if (!target) { toast('Alan adı veya IP girin', true); return; }
+  const out = $(outId);
+  out.innerHTML = '<div class="muted"><span class="spin"></span> Traceroute çalışıyor… (20–60 sn sürebilir)</div>';
+  try {
+    const d = await api('/api/trace-now', { method: 'POST', body: JSON.stringify({ target }) });
+    out.innerHTML = d.results.length ? d.results.map((r) => `<div class="card" style="background:var(--bg-2)"><div class="card-h"><h3>Traceroute · ${esc(target)}</h3>
+      <span class="sub mono">${esc(r.host)}</span><div class="right">${chip(r.iface_type || 'unknown')}</div></div>${hopTable({ ...r, target_name: target })}</div>`).join('')
+      : '<div class="alert warn">Sonuç alınamadı</div>';
+    refreshData();
+  } catch (e) { out.innerHTML = `<div class="alert warn">${ICON.warn}<span>${esc(e.message)}</span></div>`; }
+}
+
 function renderTraces() {
   const tr = S.data.traceroutes;
   const note = $('trace-note');
@@ -590,16 +617,9 @@ function renderTraces() {
   tr.forEach((t) => { const k = `${t.target_id}|${t.iface_type}`; if (!latest[k]) latest[k] = t; });
   const L = Object.values(latest);
   $('trace-latest').innerHTML = L.length ? L.map((t) => {
-    const max = Math.max(1, ...t.hops.map((h) => h.avg || 0));
     return `<div class="card"><div class="card-h"><h3>${esc(t.target_name)}</h3><span class="sub mono">${esc(t.host)}</span>
       <div class="right">${chip(t.iface_type || 'unknown')}<span class="chip">${ago(t.timestamp)}</span></div></div>
-      ${t.hops.length ? `<div class="table-wrap hops" style="max-height:340px"><table><thead><tr><th>#</th><th>IP</th><th class="r">Ort.</th><th class="r">En iyi</th><th class="r">Kayıp</th><th></th></tr></thead><tbody>
-      ${t.hops.map((h) => `<tr><td class="dim">${h.hop}</td><td class="mono">${h.ip ? esc(h.ip) : '<span class="dim">* * *</span>'}</td>
-        <td class="r">${h.avg !== null ? gv('ping', h.avg, fms) : '<span class="dim">—</span>'}</td><td class="r">${fms(h.best)}</td>
-        <td class="r">${h.loss ? `<span class="${h.loss >= 100 ? 'dim' : 'c-warn'}">%${h.loss}</span>` : '%0'}</td>
-        <td class="bar"><div class="hopbar"><i style="width:${((h.avg || 0) / max) * 100}%;background:${gcol(grade('ping', h.avg))}"></i></div></td></tr>`).join('')}
-      </tbody></table></div>` : '<div class="empty">Çıktı ayrıştırılamadı</div>'}
-      <details class="raw"><summary>Ham çıktı</summary><pre>${esc(t.output)}</pre></details></div>`;
+      ${hopTable(t)}</div>`;
   }).join('') : '<div class="card empty" style="grid-column:1/-1"><b>Traceroute kaydı yok</b>Ayarlar\'dan traceroute hedeflerini seçip zamanlayıcıyı açın.</div>';
 
   $('trace-table').innerHTML = tr.length ? tr.map((t) => {
@@ -669,6 +689,7 @@ function showTab(tab) {
   document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   $('toolbar').style.display = tab === 'settings' || tab === 'report' ? 'none' : '';
   if (tab === 'report' && !S.report) loadReport(null);
+  if (tab === 'settings') loadDataInfo();
   if (location.hash !== `#${tab}`) history.replaceState(null, '', `#${tab}`);
   requestAnimationFrame(() => Object.values(charts).forEach((c) => c.resize()));
 }
@@ -966,7 +987,7 @@ async function addQuickToSites() {
   const t = $('qs-input').value.trim();
   if (!t) return;
   const host = t.replace(/^https?:\/\//, '').split('/')[0];
-  S.sitesDraft.push({ name: host.replace(/^www\./, ''), target: t, enabled: true });
+  S.sitesDraft.push({ name: host.replace(/^www\./, ''), target: t, enabled: true, trace: true });
   try {
     const r = await api('/api/config', { method: 'POST', body: JSON.stringify({ sites: S.sitesDraft }) });
     S.cfg = r.config; S.sitesDraft = JSON.parse(JSON.stringify(S.cfg.sites)); renderSitesEditor();
@@ -1017,9 +1038,10 @@ function renderSitesEditor() {
     <td><input class="input sm mono" value="${esc(t.target)}" placeholder="ornek.com" oninput="S.sitesDraft[${i}].target=this.value.trim()" onchange="resolvePreview(${i})"></td>
     <td><span class="resolve-prev" id="rp-${i}"><button class="btn sm ghost" onclick="resolvePreview(${i})">Çözümle</button></span></td>
     <td><label class="switch"><input type="checkbox" ${t.enabled ? 'checked' : ''} onchange="S.sitesDraft[${i}].enabled=this.checked"><span></span></label></td>
+    <td><label class="switch" title="Periyodik traceroute"><input type="checkbox" ${t.trace !== false ? 'checked' : ''} onchange="S.sitesDraft[${i}].trace=this.checked"><span></span></label></td>
     <td class="r"><button class="btn sm ghost danger" onclick="S.sitesDraft.splice(${i},1);renderSitesEditor()">Sil</button></td></tr>`).join('');
 }
-function addSite() { S.sitesDraft.push({ name: '', target: '', enabled: true }); renderSitesEditor(); }
+function addSite() { S.sitesDraft.push({ name: '', target: '', enabled: true, trace: true }); renderSitesEditor(); }
 function resetSites() { S.sitesDraft = JSON.parse(JSON.stringify(S.defaults.sites)); renderSitesEditor(); toast('Varsayılan siteler yüklendi — kaydetmeyi unutmayın'); }
 
 async function resolvePreview(i) {
@@ -1082,7 +1104,7 @@ function renderCdnSettings() {
   $('cdn-svc').innerHTML = Object.entries(S.meta.cdn_services).map(([k, v]) => `<div class="sw-row"><div><b>${esc(v.name)}</b><span>${esc(v.operator)}</span></div>
     <label class="switch"><input type="checkbox" id="cdnsvc-${k}" ${svc[k] ? 'checked' : ''}><span></span></label></div>`).join('');
   $('cdn-custom-body').innerHTML = S.cdnCustomDraft.length ? S.cdnCustomDraft.map((t, i) => `<tr>
-    <td><input class="input sm" value="${esc(t.label)}" placeholder="ör. Türksat GGC Ankara" oninput="S.cdnCustomDraft[${i}].label=this.value"></td>
+    <td><input class="input sm" value="${esc(t.label)}" placeholder="ör. ISS önbelleği – İstanbul" oninput="S.cdnCustomDraft[${i}].label=this.value"></td>
     <td><input class="input sm mono" value="${esc(t.host)}" placeholder="IP veya sunucu adı" oninput="S.cdnCustomDraft[${i}].host=this.value.trim()"></td>
     <td class="r"><button class="btn sm ghost danger" onclick="S.cdnCustomDraft.splice(${i},1);renderCdnSettings()">Sil</button></td></tr>`).join('')
     : '<tr><td colspan="3" class="dim" style="padding:12px">Eklenmiş sunucu yok</td></tr>';
@@ -1221,6 +1243,39 @@ function renderReport(d) {
     if (charts['rep-ping']) { charts['rep-ping'].destroy(); delete charts['rep-ping']; }
     chart('rep-ping', 'line', { labels: labelsTs.map(lab), datasets: ds }, opts);
   }
+}
+
+// ---------------------------------------------------------------- veri yönetimi
+async function loadDataInfo() {
+  try {
+    const d = await api('/api/data/info');
+    S.dataInfo = d;
+    const total = Object.values(d.tables).reduce((a, t) => a + t.rows, 0);
+    $('data-size').textContent = `${total.toLocaleString('tr-TR')} kayıt · ${(d.size_bytes / 1048576).toFixed(1)} MB`;
+    const sel = S.clearSel || Object.keys(d.tables);
+    $('data-tables').innerHTML = Object.entries(d.tables).map(([k, t]) => `<label class="chip" style="cursor:pointer;gap:8px">
+      <input type="checkbox" class="clr-t" value="${k}" ${sel.includes(k) ? 'checked' : ''}> ${esc(t.label)} <span class="dim">${t.rows.toLocaleString('tr-TR')}</span></label>`).join('');
+  } catch (_) { /* */ }
+}
+
+async function clearData(all) {
+  const tables = [...document.querySelectorAll('.clr-t:checked')].map((x) => x.value);
+  S.clearSel = tables;
+  if (!tables.length) { toast('Silinecek veri türü seçin', true); return; }
+  const days = all ? null : parseInt($('clear-days').value, 10);
+  if (!all && !(days > 0)) { toast('Gün sayısı girin', true); return; }
+  const names = tables.map((t) => S.dataInfo?.tables[t]?.label || t).join(', ');
+  const msg = all ? `Seçili türlerdeki TÜM geçmiş silinecek:\n${names}\n\nÖnce yedek alınır. Devam edilsin mi?`
+    : `${days} günden eski kayıtlar silinecek:\n${names}\n\nÖnce yedek alınır. Devam edilsin mi?`;
+  if (!confirm(msg)) return;
+  try {
+    const r = await api('/api/data/clear', { method: 'POST', body: JSON.stringify({ tables, older_than_days: days }) });
+    const n = Object.values(r.deleted).reduce((a, b) => a + b, 0);
+    $('clear-result').innerHTML = `<div class="alert info">${ICON.info}<span>${n.toLocaleString('tr-TR')} kayıt silindi. Yedek: <span class="mono">${esc(r.backup)}</span></span></div>`;
+    toast(`${n.toLocaleString('tr-TR')} kayıt silindi`);
+    S.sig = {}; S.report = null;
+    loadDataInfo(); refreshData();
+  } catch (e) { toast(e.message, true); }
 }
 
 init();
