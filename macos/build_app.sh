@@ -21,8 +21,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>NetMonitor</string>
   <key>CFBundleDisplayName</key><string>NetMonitor</string>
   <key>CFBundleIdentifier</key><string>com.netmonitor.app</string>
-  <key>CFBundleVersion</key><string>3.0.1</string>
-  <key>CFBundleShortVersionString</key><string>3.0.1</string>
+  <key>CFBundleVersion</key><string>3.0.2</string>
+  <key>CFBundleShortVersionString</key><string>3.0.2</string>
   <key>CFBundleExecutable</key><string>NetMonitor</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
