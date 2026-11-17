@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import Body, FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import netinfo as ni
@@ -39,7 +39,7 @@ import storage as db
 import updater
 import webprobe as wp
 
-VERSION = "3.0.1"
+VERSION = "3.0.2"
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 DATA_DIR = Path(os.environ.get("NETMON_DATA_DIR", BASE_DIR))
@@ -731,7 +731,19 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/")
 def serve_ui():
-    return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+    # Sürüm numarası dosya adreslerine eklenir; güncellemeden sonra tarayıcı eski JS/CSS'i önbellekten kullanmaz
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    for f in ("app.js", "app.css", "vendor/chart.umd.js"):
+        html = html.replace(f"/static/{f}", f"/static/{f}?v={VERSION}")
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+@app.middleware("http")
+async def static_cache_headers(request, call_next):
+    resp = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "no-cache"  # her açılışta değişiklik kontrolü (ETag ile hızlı)
+    return resp
 
 
 @app.get("/api/servers")
