@@ -39,7 +39,7 @@ import storage as db
 import updater
 import webprobe as wp
 
-VERSION = "3.0.0"
+VERSION = "3.0.1"
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 DATA_DIR = Path(os.environ.get("NETMON_DATA_DIR", BASE_DIR))
@@ -1073,6 +1073,47 @@ def startup():
 startup()
 
 
+def _port_free(host: str, port: int) -> bool:
+    import socket as _s
+    with _s.socket(_s.AF_INET, _s.SOCK_STREAM) as t:
+        try:
+            t.bind((host, port))
+            return True
+        except OSError:
+            return False
+
+
+def _netmonitor_on(port: int) -> Optional[str]:
+    """Portta zaten çalışan bir NetMonitor varsa sürümünü döndürür."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/config", timeout=2) as r:
+            return json.loads(r.read().decode()).get("meta", {}).get("version") or "?"
+    except Exception:
+        return None
+
+
+def pick_port(host: str, port: int, open_browser: bool) -> int:
+    """Port doluysa: NetMonitor çalışıyorsa onu açıp çık; değilse sonraki boş portu kullan."""
+    if _port_free(host, port):
+        return port
+    running = _netmonitor_on(port)
+    if running:
+        if updater.parse_version(running) >= updater.parse_version(VERSION):
+            print(f"\n  NetMonitor v{running} zaten çalışıyor → http://localhost:{port}\n")
+            if open_browser:
+                webbrowser.open(f"http://localhost:{port}")
+            sys.exit(0)
+        print(f"\n  Eski NetMonitor v{running} {port} portunda çalışıyor. Kapatmak için o Terminal penceresinde Ctrl+C'ye basın.")
+    else:
+        print(f"\n  {port} portu başka bir program tarafından kullanılıyor.")
+    for p in range(port + 1, port + 50):
+        if _port_free(host, p):
+            print(f"  NetMonitor {p} portunda başlatılıyor.")
+            return p
+    raise SystemExit("Boş port bulunamadı; --port ile başka bir port deneyin.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="NetMonitor — Ağ Kalitesi İzleme")
     parser.add_argument("--lan", action="store_true", help="Yerel ağdaki diğer cihazlardan erişime izin ver (0.0.0.0)")
@@ -1082,6 +1123,8 @@ def main():
     args = parser.parse_args()
 
     host = args.host or ("0.0.0.0" if args.lan else "127.0.0.1")
+    if os.environ.get("NETMON_RESTART") != "1":
+        args.port = pick_port(host, args.port, not args.no_browser)
     url = f"http://localhost:{args.port}"
     print(f"\n  NetMonitor {VERSION}  —  {url}\n  Platform: {ni.SYSTEM}  ·  Veri: {DATA_DIR}\n  Durdurmak için Ctrl+C\n")
     if not args.no_browser:
