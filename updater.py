@@ -173,6 +173,7 @@ def restart(base_dir: Path, delay: float = 1.5):
                 kw["creationflags"] = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
             else:
                 kw["start_new_session"] = True
+            kw["env"] = {**os.environ, "NETMON_RESTART": "1"}
             subprocess.Popen(args, **kw)
         os._exit(0)
     threading.Thread(target=go, daemon=True).start()
