@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NetMonitor — Ağ Kalitesi İzleme</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%233dd6c6'/><path d='M6 20h4l3-9 4 14 3-9h6' fill='none' stroke='%23062a27' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/vendor/chart.umd.js"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14h3l2.5-7 3.5 11 2.5-7H21"/></svg></div>
+    NetMonitor <span class="ver" id="ver">v2</span>
+  </div>
+  <div class="conn-pill" id="conn-pill"><span class="ico"></span><span class="txt muted">Bağlantı algılanıyor…</span></div>
+  <div class="top-actions">
+    <button class="btn sm upd hidden" id="upd-badge" onclick="showTab('settings');setTimeout(()=>$('update-card').scrollIntoView({behavior:'smooth'}),100)"></button>
+    <div class="live" id="live"><i></i><span>Bağlanıyor</span></div>
+    <button class="btn" id="startstop" onclick="startStop()">…</button>
+    <div class="menu" id="export-menu">
+      <button class="btn" onclick="toggleMenu(event)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        Rapor
+      </button>
+      <div class="menu-list">
+        <a id="exp-xlsx" href="/api/export/excel">Excel (.xlsx) <small>tüm sayfalar</small></a>
+        <a id="exp-csv" href="/api/export/csv">CSV <small>noktalı virgül</small></a>
+        <button onclick="printReport()">PDF raporu <small>yazdır → PDF</small></button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<nav class="nav" id="nav">
+  <button data-tab="overview" class="active">Genel Bakış</button>
+  <button data-tab="connection">Bağlantı <span class="muted" style="font-weight:500">Wi-Fi / Ethernet</span></button>
+  <button data-tab="speed">Hız Testi</button>
+  <button data-tab="ping">Ping &amp; Jitter</button>
+  <button data-tab="sites">Siteler</button>
+  <button data-tab="cdn">CDN Önbellek</button>
+  <button data-tab="trace">Traceroute</button>
+  <button data-tab="events">Olaylar <span class="count hidden" id="ev-count"></span></button>
+  <button data-tab="report">Rapor</button>
+  <button data-tab="settings">Ayarlar</button>
+</nav>
+
+<div class="toolbar" id="toolbar">
+  <span class="label">Periyot</span>
+  <div class="seg" id="range-seg">
+    <button data-v="hourly">1 saat</button>
+    <button data-v="daily" class="active">24 saat</button>
+    <button data-v="weekly">7 gün</button>
+    <button data-v="monthly">30 gün</button>
+  </div>
+  <span class="label">Bağlantı</span>
+  <div class="seg" id="iface-seg">
+    <button data-v="all" class="active">Tümü</button>
+    <button data-v="wifi">Wi-Fi</button>
+    <button data-v="ethernet">Ethernet</button>
+  </div>
+  <span class="spacer"></span>
+  <span class="chip" id="mode-chip">Test modu: —</span>
+</div>
+
+<main>
+  <div class="print-only print-head">
+    <h1>NetMonitor — Ağ Kalitesi Raporu</h1>
+    <div id="print-meta" class="muted"></div>
+  </div>
+
+  <!-- GENEL BAKIŞ -->
+  <section class="tab active" id="tab-overview" data-title="Genel Bakış">
+    <div class="stack">
+      <div id="warnings" class="stack" style="gap:8px"></div>
+      <div class="grid kpis" id="kpis"></div>
+      <div class="card no-print">
+        <div class="card-h"><h2>Testler</h2><span class="sub">Zamanlayıcıları buradan açıp kapatabilir veya hemen çalıştırabilirsiniz</span></div>
+        <div class="jobs" id="jobs"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2>Hedef Durumu</h2><span class="sub" id="tiles-sub">Son ölçüm ve seçili periyottaki eğilim</span>
+          <div class="right legend-inline">
+            <span><i style="background:var(--good)"></i>Çok iyi</span><span><i style="background:var(--warn)"></i>Normal</span><span><i style="background:var(--bad)"></i>Kötü</span>
+          </div>
+        </div>
+        <div class="tiles" id="tiles"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BAĞLANTI -->
+  <section class="tab" id="tab-connection" data-title="Bağlantı (Wi-Fi / Ethernet)">
+    <div class="stack">
+      <div class="grid cols-3" id="ifaces"></div>
+      <div class="card">
+        <div class="card-h"><h2>Wi-Fi Sinyal Geçmişi</h2><span class="sub">RSSI (dBm) ve bağlantı hızı</span><div class="right" id="wifi-sum"></div></div>
+        <div class="chart-box"><canvas id="wifiChart"></canvas></div>
+        <div id="wifi-empty" class="empty hidden"><b>Wi-Fi verisi yok</b>Wi-Fi bağlantısı algılandığında sinyal değerleri otomatik kaydedilir.</div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2>Wi-Fi ve Ethernet Karşılaştırması</h2><span class="sub">Seçili periyotta aynı hedeflere yapılan ölçümler</span></div>
+        <div id="compare"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HIZ TESTİ -->
+  <section class="tab" id="tab-speed" data-title="Hız Testi">
+    <div class="stack">
+      <div class="grid kpis" id="speed-kpis"></div>
+      <div class="card">
+        <div class="card-h"><h2>Download / Upload Geçmişi</h2><span class="sub">Mbps</span>
+          <div class="right"><button class="btn sm no-print" onclick="runNow('speedtest')">Şimdi test et</button></div></div>
+        <div class="chart-box"><canvas id="speedChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2>Tüm Hız Testleri</h2></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Tarih</th><th>Bağlantı</th><th>Motor / Sunucu</th><th class="r">Download</th><th class="r">Upload</th><th class="r">Ping</th><th class="r">Jitter</th><th class="r">Kayıp</th><th class="r">RSSI</th></tr></thead>
+          <tbody id="speed-table"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PING -->
+  <section class="tab" id="tab-ping" data-title="Ping & Jitter">
+    <div class="stack">
+      <div id="ping-cards" class="stack"></div>
+      <div class="card">
+        <div class="card-h"><h2>Son Ölçümler</h2><span class="sub">En yeni 150 kayıt</span></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Tarih</th><th>Hedef</th><th>Bağlantı</th><th class="r">Ort.</th><th class="r">Min</th><th class="r">Max</th><th class="r">Jitter</th><th class="r">Kayıp</th><th class="r">RSSI</th></tr></thead>
+          <tbody id="ping-table"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SİTELER -->
+  <section class="tab" id="tab-sites" data-title="Site Testleri">
+    <div class="stack">
+      <div class="card no-print">
+        <div class="card-h"><h2>Site Test Et</h2><span class="sub">Alan adını yazın; otomatik çözümlenir, DNS → TCP → TLS → ilk bayt süreleri ölçülür</span></div>
+        <form class="inline" onsubmit="event.preventDefault();quickSiteTest()">
+          <input class="input" id="qs-input" placeholder="ör. youtube.com veya https://www.turkiye.gov.tr" style="max-width:520px" autocomplete="off">
+          <button class="btn primary" id="qs-btn" type="submit">Test et</button>
+          <button class="btn ghost" type="button" onclick="addQuickToSites()" title="Periyodik test listesine ekle">+ Listeye ekle</button>
+        </form>
+        <div id="qs-result" style="margin-top:14px"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2>Site Performansı</h2><span class="sub" id="site-sub"></span>
+          <div class="right no-print"><button class="btn sm" onclick="runNow('site')">Tümünü şimdi test et</button></div></div>
+        <div id="site-stats"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2>Yanıt Süresi Geçmişi</h2><span class="sub">Toplam süre (ms)</span></div>
+        <div class="chart-box"><canvas id="siteChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2>Son Site Testleri</h2></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Tarih</th><th>Site</th><th>Bağlantı</th><th>IP / Ağ</th><th class="r">HTTP</th><th>Süre dağılımı</th><th class="r">DNS</th><th class="r">TCP</th><th class="r">TLS</th><th class="r">İlk bayt</th><th class="r">Toplam</th></tr></thead>
+          <tbody id="site-table"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CDN -->
+  <section class="tab" id="tab-cdn" data-title="CDN / Önbellek Sunucuları">
+    <div class="stack">
+      <div class="alert info no-print" id="cdn-intro"></div>
+      <div class="grid cols-3" id="cdn-cards"></div>
+      <div class="card">
+        <div class="card-h"><h2>Önbellek Ölçüm Geçmişi</h2><div class="right no-print"><button class="btn sm" onclick="runNow('cdn')">Şimdi test et</button></div></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Tarih</th><th>Servis</th><th>Bağlantı</th><th>Sunucu</th><th>IP</th><th>Ağ (ASN)</th><th>Konum</th><th class="r">Ping</th><th class="r">Kayıp</th><th class="r">İlk bayt</th><th class="r">Hız</th></tr></thead>
+          <tbody id="cdn-table"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TRACEROUTE -->
+  <section class="tab" id="tab-trace" data-title="Traceroute">
+    <div class="stack">
+      <div class="alert info hidden no-print" id="trace-note"></div>
+      <div class="grid cols-2" id="trace-latest"></div>
+      <div class="card">
+        <div class="card-h"><h2>Geçmiş</h2><span class="sub">Rota değişimleri</span></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Tarih</th><th>Hedef</th><th>Bağlantı</th><th class="r">Atlama</th><th class="r">Son RTT</th><th>Rota (ilk 6 atlama)</th></tr></thead>
+          <tbody id="trace-table"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- OLAYLAR -->
+  <section class="tab" id="tab-events" data-title="Bağlantı Olayları">
+    <div class="card">
+      <div class="card-h"><h2>Bağlantı Olayları</h2><span class="sub">Kopma, yeniden bağlanma, ağ/erişim noktası değişimi, zayıf sinyal</span></div>
+      <div class="timeline" id="events"></div>
+    </div>
+  </section>
+
+  <!-- RAPOR -->
+  <section class="tab" id="tab-report" data-title="Test Raporu">
+    <div class="stack">
+      <div class="card no-print">
+        <div class="card-h"><h2>Rapor</h2><span class="sub">"Tümünü durdur" sonrası oturum raporu otomatik açılır</span>
+          <div class="right">
+            <button class="btn sm ghost" onclick="loadReport(null)">Son oturum</button>
+            <button class="btn sm ghost" onclick="loadReportRange()">Seçili periyot</button>
+            <a class="btn sm" id="rep-xlsx" href="#">Excel</a>
+            <a class="btn sm" id="rep-csv" href="#">CSV</a>
+            <button class="btn sm primary" onclick="printReport(true)">PDF</button>
+          </div></div>
+      </div>
+      <div id="report-body" class="stack"><div class="card empty"><b>Henüz rapor yok</b>Testleri başlatıp "Tümünü durdur"a bastığınızda oturum raporu burada görünür.</div></div>
+    </div>
+  </section>
+
+  <!-- AYARLAR -->
+  <section class="tab" id="tab-settings" data-title="Ayarlar">
+    <div class="stack">
+      <div class="card">
+        <div class="card-h"><h2>Test Bağlantısı</h2><span class="sub">Ölçümler hangi ağ arayüzü üzerinden yapılsın?</span></div>
+        <div class="modes" id="modes">
+          <label class="mode"><input type="radio" name="iface_mode" value="auto"><div class="box"><b>Otomatik</b><span>Sistemin varsayılan bağlantısı kullanılır. Sonuçlar o anki bağlantı türüyle etiketlenir.</span><em id="m-auto" class="muted"></em></div></label>
+          <label class="mode"><input type="radio" name="iface_mode" value="wifi"><div class="box"><b class="c-wifi">Yalnızca Wi-Fi</b><span>Ethernet takılı olsa bile testler Wi-Fi üzerinden zorlanır.</span><em id="m-wifi"></em></div></label>
+          <label class="mode"><input type="radio" name="iface_mode" value="ethernet"><div class="box"><b class="c-eth">Yalnızca Ethernet</b><span>Testler kablolu bağlantı üzerinden zorlanır.</span><em id="m-ethernet"></em></div></label>
+          <label class="mode"><input type="radio" name="iface_mode" value="both"><div class="box"><b>İkisi birden · Karşılaştır</b><span>Her test Wi-Fi ve Ethernet üzerinden ayrı ayrı yapılır.</span><em id="m-both"></em></div></label>
+        </div>
+      </div>
+
+      <div class="grid cols-3">
+        <div class="card">
+          <div class="card-h"><h3>Hız Testi</h3><div class="right"><label class="switch"><input type="checkbox" id="speedtest_running"><span></span></label></div></div>
+          <div class="form-grid">
+            <div class="field"><label>Motor</label>
+              <select class="input" id="speedtest_engine">
+                <option value="auto">Otomatik (Ookla → Cloudflare)</option>
+                <option value="ookla">Yalnızca Ookla</option>
+                <option value="cloudflare">Yalnızca Cloudflare (kotasız)</option>
+              </select></div>
+            <div class="field"><label>Ookla sunucusu (tek)</label><select class="input" id="speedtest_server_id"><option value="auto">En yakın (otomatik)</option></select><span class="hint">Aşağıda birden fazla sunucu seçilirse bu alan yok sayılır</span></div>
+            <div class="field"><label>Periyot (dakika)</label><input class="input" type="number" min="1" id="speedtest_interval" data-scale="60"></div>
+            <div class="field"><label>Cloudflare veri sınırı (MB)</label><input class="input" type="number" min="10" id="cf_max_mb"><span class="hint">Test başına en fazla indirilecek veri</span></div>
+          </div>
+          <div class="sw-row"><div><b>Hız testinde ping'i duraklat</b><span>Ölçümleri bozmamak için</span></div><label class="switch"><input type="checkbox" id="pause_ping_during_speedtest"><span></span></label></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Ping &amp; Jitter</h3><div class="right"><label class="switch"><input type="checkbox" id="ping_running"><span></span></label></div></div>
+          <div class="form-grid">
+            <div class="field"><label>Periyot (saniye)</label><input class="input" type="number" min="2" id="ping_interval"></div>
+            <div class="field"><label>Paket sayısı</label><input class="input" type="number" min="1" max="50" id="ping_count"></div>
+            <div class="field"><label>Zaman aşımı (ms)</label><input class="input" type="number" min="200" id="ping_timeout_ms"></div>
+            <div class="field"><label>Wi-Fi örnekleme (saniye)</label><input class="input" type="number" min="5" id="wifi_interval"><span class="hint">Sinyal/olay kayıt aralığı</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Traceroute</h3><div class="right"><label class="switch"><input type="checkbox" id="trace_running"><span></span></label></div></div>
+          <div class="form-grid">
+            <div class="field"><label>Periyot (dakika)</label><input class="input" type="number" min="1" id="trace_interval" data-scale="60"></div>
+            <div class="field"><label>Maks. atlama</label><input class="input" type="number" min="5" max="40" id="trace_max_hops"></div>
+            <div class="field"><label>Veri saklama (gün)</label><input class="input" type="number" min="0" id="retention_days"><span class="hint">0 = sınırsız</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>Ookla Sunucuları</h3><span class="sub">Seçilen her sunucuda ayrı hız testi yapılır (ör. Türksat Kablo sunucuları)</span></div>
+        <div class="inline" style="flex-wrap:wrap">
+          <input class="input" id="ook-q" value="Türksat" style="max-width:280px" onkeydown="if(event.key==='Enter'){event.preventDefault();ooklaSearch()}">
+          <button class="btn" onclick="ooklaSearch()">Sunucu ara</button>
+          <span class="muted" style="font-size:12px">Şehir, operatör veya sunucu ID ile arayın</span>
+        </div>
+        <div class="lbl-sm" style="margin:14px 0 6px">Seçili sunucular</div>
+        <div id="ook-selected" class="chips-wrap"></div>
+        <div id="ook-results" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>Siteler</h3><div class="right"><label class="switch" title="Periyodik site testi"><input type="checkbox" id="site_running"><span></span></label></div></div>
+        <div class="form-grid" style="margin-bottom:12px">
+          <div class="field"><label>Periyot (dakika)</label><input class="input" type="number" min="1" id="site_interval" data-scale="60"></div>
+          <div class="sw-row" style="border:0;padding:0"><div><b>DNS sunucularını karşılaştır</b><span>Sistem / ISS / Google / Cloudflare</span></div><label class="switch"><input type="checkbox" id="site_resolvers"><span></span></label></div>
+        </div>
+        <div class="table-wrap" style="max-height:none"><table class="targets">
+          <thead><tr><th>Ad</th><th>Alan adı / URL</th><th>Çözümleme</th><th>Aktif</th><th></th></tr></thead>
+          <tbody id="sites-body"></tbody>
+        </table></div>
+        <div style="margin-top:10px;display:flex;gap:8px"><button class="btn sm" onclick="addSite()">+ Site ekle</button><button class="btn sm ghost" onclick="resetSites()">Varsayılanlara dön</button></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>CDN / Önbellek</h3><span class="sub">YouTube (Google GGC), Facebook ve Instagram (Meta FNA) sunucuları otomatik bulunur</span>
+          <div class="right"><label class="switch"><input type="checkbox" id="cdn_running"><span></span></label></div></div>
+        <div class="form-grid">
+          <div class="field"><label>Periyot (dakika)</label><input class="input" type="number" min="2" id="cdn_interval" data-scale="60"></div>
+        </div>
+        <div id="cdn-svc"></div>
+        <div class="lbl-sm" style="margin:14px 0 6px">Bilinen önbellek sunucuları (isteğe bağlı) — ör. ISS'nizin GGC/FNA IP'leri</div>
+        <div class="table-wrap" style="max-height:none"><table class="targets"><thead><tr><th>Ad</th><th>Sunucu / IP</th><th></th></tr></thead><tbody id="cdn-custom-body"></tbody></table></div>
+        <div style="margin-top:10px"><button class="btn sm" onclick="addCdnCustom()">+ Sunucu ekle</button></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>Hedefler</h3><span class="sub"><code>@gateway</code> her bağlantının kendi modemini/ağ geçidini ifade eder</span>
+          <div class="right"><button class="btn sm ghost" onclick="resetTargets()">Varsayılanlara dön</button><button class="btn sm" onclick="addTarget()">+ Hedef ekle</button></div></div>
+        <div class="table-wrap" style="max-height:none"><table class="targets">
+          <thead><tr><th>Ad</th><th>IP / Host</th><th>Ping</th><th>Traceroute</th><th></th></tr></thead>
+          <tbody id="targets-body"></tbody>
+        </table></div>
+      </div>
+
+      <div class="grid cols-2">
+        <div class="card">
+          <div class="card-h"><h3>Eşikler</h3><span class="sub">Renklendirme ve uyarılar</span></div>
+          <div class="form-grid">
+            <div class="field"><label>Ping "çok iyi" &lt; (ms)</label><input class="input" type="number" id="th_ping_good"></div>
+            <div class="field"><label>Ping "normal" ≤ (ms)</label><input class="input" type="number" id="th_ping_warn"></div>
+            <div class="field"><label>Jitter "çok iyi" &lt; (ms)</label><input class="input" type="number" id="th_jitter_good"></div>
+            <div class="field"><label>Jitter "normal" ≤ (ms)</label><input class="input" type="number" id="th_jitter_warn"></div>
+            <div class="field"><label>Paket kaybı uyarısı &gt; (%)</label><input class="input" type="number" id="th_loss_alert"></div>
+            <div class="field"><label>Zayıf Wi-Fi &lt; (dBm)</label><input class="input" type="number" id="th_rssi_weak"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>E-posta Uyarıları</h3><div class="right"><label class="switch"><input type="checkbox" id="email_enabled"><span></span></label></div></div>
+          <div class="form-grid">
+            <div class="field"><label>SMTP sunucu</label><input class="input" id="smtp_server" placeholder="smtp.gmail.com"></div>
+            <div class="field"><label>Port</label><input class="input" type="number" id="smtp_port" placeholder="587"><span class="hint">587 STARTTLS · 465 SSL</span></div>
+            <div class="field"><label>Gönderen (SMTP kullanıcı)</label><input class="input" type="email" id="smtp_user" placeholder="ornek@gmail.com" autocomplete="off"></div>
+            <div class="field"><label>Şifre (Gmail uygulama şifresi)</label><input class="input" type="password" id="smtp_pass" placeholder="xxxx xxxx xxxx xxxx" autocomplete="new-password"></div>
+            <div class="field"><label>Alıcı</label><input class="input" type="email" id="recipient_email" placeholder="alici@gmail.com"></div>
+            <div class="field"><label>Tekrar bekleme (dakika)</label><input class="input" type="number" id="alert_cooldown_min"></div>
+          </div>
+          <div class="sw-row"><div><b>Paket kaybı</b><span>Eşik aşıldığında</span></div><label class="switch"><input type="checkbox" id="alert_on_loss"><span></span></label></div>
+          <div class="sw-row"><div><b>Bağlantı koptu</b><span>Wi-Fi / Ethernet bağlantısı düştüğünde</span></div><label class="switch"><input type="checkbox" id="alert_on_link_down"><span></span></label></div>
+          <div class="sw-row"><div><b>Zayıf Wi-Fi sinyali</b><span>RSSI eşiğin altına indiğinde</span></div><label class="switch"><input type="checkbox" id="alert_on_weak_wifi"><span></span></label></div>
+          <div style="margin-top:12px"><button class="btn sm" onclick="testEmail()">Test e-postası gönder</button></div>
+        </div>
+      </div>
+
+      <div class="card" id="update-card">
+        <div class="card-h"><h3>Güncelleme</h3><span class="sub" id="upd-current"></span></div>
+        <div class="form-grid">
+          <div class="field"><label>Güncelleme kaynağı</label><input class="input mono" id="update_repo" placeholder="kullanici/depo veya https://…/version.json"><span class="hint">GitHub deposu (Releases) veya kendi sunucunuzdaki version.json</span></div>
+          <div class="sw-row" style="border:0;padding:0"><div><b>Otomatik kontrol</b><span>Açılışta ve 12 saatte bir</span></div><label class="switch"><input type="checkbox" id="update_auto_check"><span></span></label></div>
+        </div>
+        <div class="inline" style="margin-top:12px;flex-wrap:wrap">
+          <button class="btn sm" onclick="checkUpdate()">Şimdi kontrol et</button>
+          <button class="btn sm primary hidden" id="upd-apply" onclick="applyUpdate()">Güncelle</button>
+          <span id="upd-status" class="muted" style="font-size:12.5px"></span>
+        </div>
+        <pre id="upd-notes" class="hidden" style="white-space:pre-wrap;font:12px var(--mono);color:var(--muted);margin:10px 0 0"></pre>
+      </div>
+
+      <div class="save-bar">
+        <span class="muted" id="save-state"></span>
+        <button class="btn ghost" onclick="loadSettings()">Geri al</button>
+        <button class="btn primary" onclick="saveSettings()">Ayarları kaydet</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="toasts"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

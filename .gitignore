@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+config.json
+network_monitor.db*
+.backup/
+dist/
+.DS_Store
