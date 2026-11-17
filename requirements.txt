@@ -1,0 +1,5 @@
+fastapi>=0.100
+uvicorn>=0.22
+openpyxl>=3.1
+psutil>=5.9
+dnspython>=2.4
