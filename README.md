@@ -1,6 +1,5 @@
 # NetMonitor — Ağ Kalitesi Sürekli İzleme
 
-**Tanıtım ve kurulum sayfası:** https://ferhatgunuc.github.io/netmonitor/
 
 ![NetMonitor genel bakış](docs/img/overview.jpg)
 
